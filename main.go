@@ -33,7 +33,8 @@ func main() {
 	resetDisplay()
 
 	// Load the test ROM
-	rom, err := os.Open("../chip8-roms/tests/1-chip8-logo.ch8")
+	// rom, err := os.Open("../chip8-roms/tests/1-chip8-logo.ch8")
+	rom, err := os.Open("../chip8-roms/tests/2-ibm-logo.ch8")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -100,6 +101,9 @@ func main() {
 		case 0x60:
 			// 6XNN - Save NN to Register
 			registers[uint8(x)] = nn
+		case 0x70:
+			// 7XNN - Add NN to VX
+			registers[uint8(x)] += nn
 		case 0xA0:
 			// ANNN - Save NNN to Index Register
 			indexRegister = nnn
