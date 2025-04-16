@@ -78,7 +78,6 @@ func main() {
 				pc++
 				opcode := uint16(ins1)<<8 + uint16(ins2)
 
-				fmt.Printf("Opcode - %X\n", opcode)
 				opcodePCMutex.Lock()
 				defer opcodePCMutex.Unlock()
 
@@ -226,7 +225,7 @@ func main() {
 					if didUnset {
 						registers[0x0F] = 1
 					}
-				case 0xF:
+				case 0xF0:
 					switch nn {
 					case 0x07:
 						// FX07 - Set VX to the value of the delay timer
@@ -250,7 +249,7 @@ func main() {
 						// FX33 - Store a BCD representation of VX to memory location I
 						// Representation is i = hundreds, i+1 = tens, i+2 = ones
 						hundreds := registers[uint8(x)] / 100
-						tens := registers[uint8(x)] - (100*hundreds)/10
+						tens := (registers[uint8(x)] - (100 * hundreds)) / 10
 						ones := registers[uint8(x)] - (100 * hundreds) - (10 * tens)
 						memory[indexRegister] = hundreds
 						memory[indexRegister+1] = tens
@@ -258,12 +257,12 @@ func main() {
 					case 0x55:
 						// FX55 - Stores V0 to VX in memory, starting at address I
 						for i := 0; i <= int(x); i++ {
-							memory[indexRegister+uint16(i)] = registers[uint8(int(x)+i)]
+							memory[indexRegister+uint16(i)] = registers[i]
 						}
 					case 0x65:
 						// FX65 - Fetches values for V0 to VX from memory, starting at address I
 						for i := 0; i <= int(x); i++ {
-							registers[uint8(x)] = memory[indexRegister+uint16(i)]
+							registers[i] = memory[indexRegister+uint16(i)]
 						}
 					}
 				default:
