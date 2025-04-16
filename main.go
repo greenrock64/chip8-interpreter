@@ -107,17 +107,17 @@ func main() {
 				case 0x30:
 					// 3XNN - Skip if VX = NN
 					if registers[uint8(x)] == nn {
-						pc++
+						pc += 2
 					}
 				case 0x40:
 					// 4XNN - Skip if VX != NN
 					if registers[uint8(x)] != nn {
-						pc++
+						pc += 2
 					}
 				case 0x50:
 					// 5XY0 - Skip if VX == VY
 					if registers[uint8(x)] == registers[uint8(y)] {
-						pc++
+						pc += 2
 					}
 				case 0x60:
 					// 6XNN - Save NN to Register
@@ -176,7 +176,7 @@ func main() {
 				case 0x90:
 					// 9XY0 - Skip if VX != VY
 					if registers[uint8(x)] != registers[uint8(y)] {
-						pc++
+						pc += 2
 					}
 				case 0xA0:
 					// ANNN - Save NNN to Index Register
