@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	FRAMERATE = 60
+	FRAMERATE = 240
 )
 
 var (
@@ -47,7 +47,8 @@ func main() {
 	// Load the test ROM
 	// rom, err := os.Open("../chip8-roms/tests/1-chip8-logo.ch8")
 	// rom, err := os.Open("../chip8-roms/tests/2-ibm-logo.ch8")
-	rom, err := os.Open("../chip8-roms/tests/3-corax+.ch8")
+	// rom, err := os.Open("../chip8-roms/tests/3-corax+.ch8")
+	rom, err := os.Open("../chip8-roms/tests/4-flags.ch8")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -141,36 +142,38 @@ func main() {
 					case 0x4:
 						// 8XY4 - Add VY to VX (setting VF to 1 on overflow)
 						newVal := uint16(registers[uint8(x)]) + uint16(registers[uint8(y)])
+						var flag uint8 = 0
 						if newVal > 255 {
-							registers[0xF] = 1
-						} else {
-							registers[0xF] = 0
+							flag = 1
 						}
 						registers[uint8(x)] = uint8(newVal)
+						registers[0xF] = flag
 					case 0x5:
 						// 8XY5 - Sub VY from VX (setting VF to 0 on underflow)
+						var flag uint8 = 0
 						if registers[uint8(x)] >= registers[uint8(y)] {
-							registers[0xF] = 1
-						} else {
-							registers[0xF] = 0
+							flag = 1
 						}
 						registers[uint8(x)] -= registers[uint8(y)]
+						registers[0xF] = flag
 					case 0x6:
-						// 8XY6 - Bitshift VX right 1, storing LSB in VF
-						registers[0xF] = registers[uint8(x)] & 1
+						// 8XY6 - Bitshift VX right 1, setting VF 1 to if LSB was shifted out
+						flag := registers[uint8(x)] & 1
 						registers[uint8(x)] = registers[uint8(x)] >> 1
+						registers[0xF] = flag
 					case 0x7:
 						// 8XY7 - Set VX to VY - VX (setting VF to 0 on underflow)
+						var flag uint8 = 0
 						if registers[uint8(y)] >= registers[uint8(x)] {
-							registers[0xF] = 1
-						} else {
-							registers[0xF] = 0
+							flag = 1
 						}
 						registers[uint8(x)] = registers[uint8(y)] - registers[uint8(x)]
+						registers[0xF] = flag
 					case 0xE:
-						// 8XYE - Bitshift VX left 1, storing MSB in VF
-						registers[0xF] = registers[uint8(x)] & 128
+						// 8XYE - Bitshift VX left 1, setting VF to 1 if MSB was shifted out
+						flag := registers[uint8(x)] >> 7
 						registers[uint8(x)] = registers[uint8(x)] << 1
+						registers[0xF] = flag
 					}
 				case 0x90:
 					// 9XY0 - Skip if VX != VY
