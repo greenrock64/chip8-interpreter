@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"io"
 	"log"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -14,7 +15,8 @@ import (
 )
 
 const (
-	FRAMERATE = 240
+	INSTRUCTION_REFRESH_RATE = 700
+	TIMER_REFRESH_RATE       = 60
 )
 
 var (
@@ -22,23 +24,50 @@ var (
 	displayMutex sync.Mutex
 	memory       = make([]byte, 4096)
 	memoryMutex  sync.Mutex
+	input        = make([]bool, 16)
+	inputMutex   sync.Mutex
+
+	timerMutex sync.RWMutex
+	delayTimer uint8
+	soundTimer uint8
 
 	opcodePC      = int32(0)
 	opcodePCMutex sync.Mutex
 
-	pixelWidth   = 8
-	pixelHeight  = 8
-	windowWidth  = pixelWidth * 64
-	windowHeight = pixelHeight * 32
+	pixelWidth           = 8
+	pixelHeight          = 8
+	horizontalPixelCount = 64
+	verticalPixelCount   = 32
+	windowWidth          = pixelWidth * horizontalPixelCount
+	windowHeight         = pixelHeight * verticalPixelCount
 )
 
+func handleKeyboardInput() {
+	inputMutex.Lock()
+	defer inputMutex.Unlock()
+
+	supportedKeys := []g.Key{
+		g.KeyX, g.Key1, g.Key2, g.Key3,
+		g.KeyQ, g.KeyW, g.KeyE, g.KeyA,
+		g.KeyS, g.KeyD, g.KeyZ, g.KeyC,
+		g.Key4, g.KeyR, g.KeyF, g.KeyV,
+	}
+	for i, key := range supportedKeys {
+		if g.IsKeyDown(key) {
+			input[i] = true
+		} else {
+			input[i] = false
+		}
+	}
+}
+
 func main() {
+	quitChan := make(chan bool)
+
 	// Instantiate memory, registers, timers, and counters
 	pc := uint16(512) // Program Counter
 	indexRegister := uint16(0)
 	stack := Stack{}
-	delayTimer := 0
-	soundTimer := 0
 	registers := make([]uint8, 16)
 
 	// Display setup
@@ -48,7 +77,9 @@ func main() {
 	// rom, err := os.Open("../chip8-roms/tests/1-chip8-logo.ch8")
 	// rom, err := os.Open("../chip8-roms/tests/2-ibm-logo.ch8")
 	// rom, err := os.Open("../chip8-roms/tests/3-corax+.ch8")
-	rom, err := os.Open("../chip8-roms/tests/4-flags.ch8")
+	// rom, err := os.Open("../chip8-roms/tests/4-flags.ch8")
+	// rom, err := os.Open("../chip8-roms/tests/5-quirks.ch8")
+	rom, err := os.Open("../chip8-roms/tests/6-keypad.ch8")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,10 +99,20 @@ func main() {
 	// Window Operations
 	window := g.NewMasterWindow("CHIP-8 Interpreter", 1000, 800, 0)
 
+	repeatOpcode := func() {
+		pc -= 2
+	}
+	skipNextOpcode := func() {
+		pc += 2
+	}
+
+	go timerHandler(quitChan)
+
 	// Main Loop
 	running := true
 	go func() {
 		for running {
+			start := time.Now()
 			func() {
 				ins1 := memory[pc]
 				pc++
@@ -107,17 +148,17 @@ func main() {
 				case 0x30:
 					// 3XNN - Skip if VX = NN
 					if registers[uint8(x)] == nn {
-						pc += 2
+						skipNextOpcode()
 					}
 				case 0x40:
 					// 4XNN - Skip if VX != NN
 					if registers[uint8(x)] != nn {
-						pc += 2
+						skipNextOpcode()
 					}
 				case 0x50:
 					// 5XY0 - Skip if VX == VY
 					if registers[uint8(x)] == registers[uint8(y)] {
-						pc += 2
+						skipNextOpcode()
 					}
 				case 0x60:
 					// 6XNN - Save NN to Register
@@ -178,7 +219,7 @@ func main() {
 				case 0x90:
 					// 9XY0 - Skip if VX != VY
 					if registers[uint8(x)] != registers[uint8(y)] {
-						pc += 2
+						skipNextOpcode()
 					}
 				case 0xA0:
 					// ANNN - Save NNN to Index Register
@@ -186,11 +227,15 @@ func main() {
 				case 0xB0:
 					// BNNN - Jump to address NNN plus V0
 					pc = nnn + uint16(registers[0])
+				case 0xC0:
+					// CXNN - Set VX to the NN & Rand
+					rand := rand.Intn(255)
+					registers[x] = nn & uint8(rand)
 				case 0xD0:
 					// DXYN - Draw to display
 					memPos := indexRegister
-					posX := int(registers[x])
-					posY := registers[y]
+					posX := int(registers[x]) % horizontalPixelCount
+					posY := int(registers[y]) % verticalPixelCount
 
 					didUnset := false
 					func() {
@@ -214,6 +259,9 @@ func main() {
 							for x := 0; x < 8; x++ {
 								if setPixels[x] {
 									displayPosX := posX + (x)
+									if displayPosX >= horizontalPixelCount {
+										break
+									}
 									display[displayPosX][posY] = !display[displayPosX][posY]
 									if !display[displayPosX][posY] {
 										didUnset = true
@@ -223,25 +271,69 @@ func main() {
 
 							memPos++
 							posY++
+							if posY >= verticalPixelCount {
+								break
+							}
 						}
 					}()
 					if didUnset {
 						registers[0x0F] = 1
 					}
+				case 0xE0:
+					switch nn {
+					case 0x9E:
+						fallthrough
+					case 0xA1:
+						func() {
+							inputMutex.Lock()
+							defer inputMutex.Unlock()
+							key := registers[x]
+							if input[key] && nn == 0x9E {
+								skipNextOpcode()
+							}
+							if !input[key] && nn == 0xA1 {
+								skipNextOpcode()
+							}
+						}()
+					}
 				case 0xF0:
 					switch nn {
 					case 0x07:
 						// FX07 - Set VX to the value of the delay timer
-						unsupportedOpcode(opcode)
+						func() {
+							timerMutex.RLock()
+							defer timerMutex.RUnlock()
+							registers[x] = uint8(delayTimer)
+						}()
 					case 0x0A:
 						// FX0A - Await keypress
-						unsupportedOpcode(opcode)
+						func() {
+							inputMutex.Lock()
+							defer inputMutex.Unlock()
+							keyIsPressed := false
+							for _, key := range input {
+								if key {
+									keyIsPressed = true
+								}
+							}
+							if !keyIsPressed {
+								repeatOpcode()
+							}
+						}()
 					case 0x15:
 						// FX15 - Set the delay timer to VX
-						unsupportedOpcode(opcode)
+						func() {
+							timerMutex.RLock()
+							defer timerMutex.RUnlock()
+							delayTimer = registers[x]
+						}()
 					case 0x18:
 						// FX18 - Set the sound timer to VX
-						unsupportedOpcode(opcode)
+						func() {
+							timerMutex.RLock()
+							defer timerMutex.RUnlock()
+							soundTimer = registers[x]
+						}()
 					case 0x1E:
 						// FX1E - Add VX to I
 						indexRegister += uint16(registers[uint8(x)])
@@ -272,23 +364,19 @@ func main() {
 					unsupportedOpcode(opcode)
 				}
 
-				if delayTimer > 0 {
-					delayTimer--
-				}
-				if soundTimer > 0 {
-					soundTimer--
-				}
-
 				opcodePC = int32((pc - 512) / 2)
 			}()
+			t := time.Now()
+			elapsed := t.Sub(start)
 			// Cap to 60Hz
-			delay := (1000 / FRAMERATE) /*  - loopTime */
+			delay := (1000 / INSTRUCTION_REFRESH_RATE) - elapsed
 			time.Sleep(time.Millisecond * time.Duration(delay))
 		}
 	}()
 
 	window.Run(windowLoop)
 	running = false
+	quitChan <- true
 }
 
 func unsupportedOpcode(opcode uint16) {
@@ -302,7 +390,37 @@ func resetDisplay() {
 	}
 }
 
+func timerHandler(quit chan bool) {
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+			start := time.Now()
+			t := time.Now()
+			elapsed := t.Sub(start)
+
+			func() {
+				timerMutex.Lock()
+				defer timerMutex.Unlock()
+
+				if delayTimer > 0 {
+					delayTimer--
+				}
+				if soundTimer > 0 {
+					soundTimer--
+				}
+			}()
+
+			// Cap to 60Hz
+			delay := (1000 / TIMER_REFRESH_RATE) - elapsed
+			time.Sleep(delay)
+		}
+	}
+}
+
 func windowLoop() {
+	handleKeyboardInput()
 	g.SingleWindow().Layout(
 		g.Row(
 			g.Column(
