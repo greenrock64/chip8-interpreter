@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"image"
-	"image/color"
 	"io"
 	"log"
 	"math/rand"
@@ -11,12 +9,13 @@ import (
 	"sync"
 	"time"
 
-	g "github.com/AllenDang/giu"
+	"github.com/veandco/go-sdl2/sdl"
 )
 
 const (
-	INSTRUCTION_REFRESH_RATE = 700
+	INSTRUCTION_REFRESH_RATE = 600
 	TIMER_REFRESH_RATE       = 60
+	DISPLAY_REFRESH_RATE     = 60
 )
 
 var (
@@ -42,25 +41,6 @@ var (
 	windowHeight         = pixelHeight * verticalPixelCount
 )
 
-func handleKeyboardInput() {
-	inputMutex.Lock()
-	defer inputMutex.Unlock()
-
-	supportedKeys := []g.Key{
-		g.KeyX, g.Key1, g.Key2, g.Key3,
-		g.KeyQ, g.KeyW, g.KeyE, g.KeyA,
-		g.KeyS, g.KeyD, g.KeyZ, g.KeyC,
-		g.Key4, g.KeyR, g.KeyF, g.KeyV,
-	}
-	for i, key := range supportedKeys {
-		if g.IsKeyDown(key) {
-			input[i] = true
-		} else {
-			input[i] = false
-		}
-	}
-}
-
 func main() {
 	quitChan := make(chan bool)
 
@@ -80,6 +60,7 @@ func main() {
 	// rom, err := os.Open("../chip8-roms/tests/4-flags.ch8")
 	// rom, err := os.Open("../chip8-roms/tests/5-quirks.ch8")
 	rom, err := os.Open("../chip8-roms/tests/6-keypad.ch8")
+	// rom, err := os.Open("../chip8-roms/octojam/octojam9title.ch8")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,8 +77,23 @@ func main() {
 		}
 	}()
 
-	// Window Operations
-	window := g.NewMasterWindow("CHIP-8 Interpreter", 1000, 800, 0)
+	// Setup SDL Display
+	if err := sdl.Init(sdl.INIT_EVERYTHING); err != nil {
+		panic(err)
+	}
+	defer sdl.Quit()
+
+	window, err := sdl.CreateWindow("SDL Experiments", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
+		int32(windowWidth), int32(windowHeight), sdl.WINDOW_SHOWN)
+	if err != nil {
+		panic(err)
+	}
+	defer window.Destroy()
+
+	surface, err := window.GetSurface()
+	if err != nil {
+		panic(err)
+	}
 
 	repeatOpcode := func() {
 		pc -= 2
@@ -105,11 +101,10 @@ func main() {
 	skipNextOpcode := func() {
 		pc += 2
 	}
-
 	go timerHandler(quitChan)
 
-	// Main Loop
 	running := true
+	// Main Loop
 	go func() {
 		for running {
 			start := time.Now()
@@ -374,7 +369,69 @@ func main() {
 		}
 	}()
 
-	window.Run(windowLoop)
+	for running {
+		handleKeyEvent := func(keyCode sdl.Keycode, isPressed bool) {
+			inputMutex.Lock()
+			defer inputMutex.Unlock()
+			// TODO - Handle input a bit more sanely, instead of this big switch
+			switch keyCode {
+			case sdl.GetKeyFromName("1"):
+				input[1] = isPressed
+			case sdl.GetKeyFromName("2"):
+				input[2] = isPressed
+			case sdl.GetKeyFromName("3"):
+				input[3] = isPressed
+			case sdl.GetKeyFromName("4"):
+				input[12] = isPressed
+			case sdl.GetKeyFromName("Q"):
+				input[4] = isPressed
+			case sdl.GetKeyFromName("W"):
+				input[5] = isPressed
+			case sdl.GetKeyFromName("E"):
+				input[6] = isPressed
+			case sdl.GetKeyFromName("R"):
+				input[13] = isPressed
+			case sdl.GetKeyFromName("A"):
+				input[7] = isPressed
+			case sdl.GetKeyFromName("S"):
+				input[8] = isPressed
+			case sdl.GetKeyFromName("D"):
+				input[9] = isPressed
+			case sdl.GetKeyFromName("F"):
+				input[14] = isPressed
+			case sdl.GetKeyFromName("Z"):
+				input[10] = isPressed
+			case sdl.GetKeyFromName("X"):
+				input[0] = isPressed
+			case sdl.GetKeyFromName("C"):
+				input[11] = isPressed
+			case sdl.GetKeyFromName("V"):
+				input[15] = isPressed
+			}
+		}
+		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+			switch event := event.(type) {
+			case *sdl.KeyboardEvent:
+				func() {
+					if event.GetType() == sdl.KEYDOWN {
+						handleKeyEvent(event.Keysym.Sym, true)
+					} else {
+						// KEYUP
+						handleKeyEvent(event.Keysym.Sym, false)
+					}
+				}()
+			case *sdl.QuitEvent:
+				println("Quit")
+				running = false
+			}
+		}
+
+		loopTime := sdlLoop(surface)
+		window.UpdateSurface()
+
+		delay := (1000 / DISPLAY_REFRESH_RATE) - loopTime
+		sdl.Delay(delay)
+	}
 	running = false
 	quitChan <- true
 }
@@ -397,8 +454,6 @@ func timerHandler(quit chan bool) {
 			return
 		default:
 			start := time.Now()
-			t := time.Now()
-			elapsed := t.Sub(start)
 
 			func() {
 				timerMutex.Lock()
@@ -412,64 +467,36 @@ func timerHandler(quit chan bool) {
 				}
 			}()
 
+			t := time.Now()
+			elapsed := t.Sub(start)
+
 			// Cap to 60Hz
 			delay := (1000 / TIMER_REFRESH_RATE) - elapsed
-			time.Sleep(delay)
+			time.Sleep(delay * time.Millisecond)
 		}
 	}
 }
 
-func windowLoop() {
-	handleKeyboardInput()
-	g.SingleWindow().Layout(
-		g.Row(
-			g.Column(
-				g.Child().Size(float32(windowWidth), float32(windowHeight)).Border(false).Flags(g.WindowFlagsNoBackground).Layout(
-					g.Custom(func() {
-						displayMutex.Lock()
-						defer displayMutex.Unlock()
-						canvas := g.GetCanvas()
-						pos := g.GetCursorScreenPos()
-						col := color.RGBA{200, 75, 75, 255}
-						// Border
-						canvas.AddRect(pos.Add(image.Pt(0, 0)), pos.Add(image.Pt(windowWidth, windowHeight)), col, 5, g.DrawFlagsNone, 1)
-						// Content
-						for x := range len(display) {
-							for y := range len(display[x]) {
-								if display[x][y] {
-									canvas.AddRectFilled(
-										pos.Add(image.Pt(x*pixelWidth, y*pixelHeight)),
-										pos.Add(image.Pt(x*pixelWidth+pixelWidth, y*pixelHeight+pixelHeight)),
-										col, 0, 0,
-									)
-								}
-							}
-						}
-					}),
-				),
-			),
-			g.Column(
-				g.Child().Size(300, 200).Layout(
-					g.Label("Memory"),
-					g.ListClipper().Layout(
-						g.Custom(func() {
-							memoryMutex.Lock()
-							defer memoryMutex.Unlock()
-							opcodePCMutex.Lock()
-							defer opcodePCMutex.Unlock()
+func sdlLoop(surface *sdl.Surface) uint32 {
+	// Clear the surface
+	surface.FillRect(nil, 0)
 
-							memoryDisplay := []string{}
-							// FIXME - Organise opcodes for display outside the window logic
-							for i := 512; i < 4096; i += 2 {
-								opcode := uint16(memory[i])<<8 + uint16(memory[i+1])
-								memoryDisplay = append(memoryDisplay, fmt.Sprintf("(%#04x) - %#04X", i, opcode))
-							}
-							test := g.ListBox(memoryDisplay).SelectedIndex(&opcodePC)
-							test.Build()
-						}),
-					),
-				),
-			),
-		),
-	)
+	// Set the pixel's colour and map it to the display's colourspace
+	colour := sdl.Color{R: 255, G: 255, B: 255, A: 255} // White
+	pixel := sdl.MapRGBA(surface.Format, colour.R, colour.G, colour.B, colour.A)
+
+	displayMutex.Lock()
+	defer displayMutex.Unlock()
+	for x := range len(display) {
+		for y := range len(display[x]) {
+			if display[x][y] {
+				// Determine the pixels location
+				rect := sdl.Rect{X: int32(x * pixelWidth), Y: int32(y * pixelHeight), W: int32(pixelWidth), H: int32(pixelHeight)}
+				// Draw a rectangle
+				surface.FillRect(&rect, pixel)
+			}
+		}
+	}
+
+	return 0
 }
