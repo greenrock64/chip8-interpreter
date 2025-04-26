@@ -15,6 +15,16 @@ const (
 	TIMER_REFRESH_RATE       = 60
 )
 
+var roms = map[string]string{
+	"testsuite1":    "../chip8-roms/tests/1-chip8-logo.ch8",
+	"testsuite2":    "../chip8-roms/tests/2-ibm-logo.ch8",
+	"testsuite3":    "../chip8-roms/tests/3-corax+.ch8",
+	"testsuite4":    "../chip8-roms/tests/4-flags.ch8",
+	"testsuite5":    "../chip8-roms/tests/5-quirks.ch8",
+	"testsuite6":    "../chip8-roms/tests/6-keypad.ch8",
+	"octojam9title": "../chip8-roms/octojam/octojam9title.ch8",
+}
+
 var (
 	stopChan     = make(chan bool)
 	isRunning    bool
@@ -36,6 +46,14 @@ var (
 	registers     []uint8
 )
 
+func StartRom(romName string) {
+	resetInterpreter()
+	resetDisplay()
+	loadRom(romName)
+	go interpreterLoop()
+	go windowLoop()
+}
+
 func resetInterpreter() {
 	// Stop the interpreter, if it's running
 	runningMutex.Lock()
@@ -56,18 +74,19 @@ func resetInterpreter() {
 	defer memoryMutex.Unlock()
 	memory = make([]byte, 4096)
 
-	// Load the test ROM
-	// rom, err := os.Open("../chip8-roms/tests/1-chip8-logo.ch8")
-	// rom, err := os.Open("../chip8-roms/tests/2-ibm-logo.ch8")
-	// rom, err := os.Open("../chip8-roms/tests/3-corax+.ch8")
-	// rom, err := os.Open("../chip8-roms/tests/4-flags.ch8")
-	// rom, err := os.Open("../chip8-roms/tests/5-quirks.ch8")
-	rom, err := os.Open("../chip8-roms/tests/6-keypad.ch8")
-	// rom, err := os.Open("../chip8-roms/octojam/octojam9title.ch8")
+}
+
+func loadRom(romName string) {
+	// Open the ROM on the filesystem
+	rom, err := os.Open(roms[romName])
 	if err != nil {
 		log.Fatal(err)
 	}
 	func() {
+		// Load the ROM into CHIP-8 memory
+		memoryMutex.Lock()
+		defer memoryMutex.Unlock()
+
 		_, err = rom.Read(memory[512:])
 		if err != io.EOF && err != nil {
 			log.Fatal(err)
