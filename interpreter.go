@@ -16,6 +16,10 @@ const (
 )
 
 var (
+	stopChan     = make(chan bool)
+	isRunning    bool
+	runningMutex sync.Mutex
+
 	memory      []byte
 	memoryMutex sync.Mutex
 
@@ -33,6 +37,13 @@ var (
 )
 
 func resetInterpreter() {
+	// Stop the interpreter, if it's running
+	runningMutex.Lock()
+	if isRunning {
+		stopChan <- true
+	}
+	runningMutex.Unlock()
+
 	// Instantiate memory, registers, timers, and counters
 	pc = uint16(512) // Program Counter
 	indexRegister = uint16(0)
@@ -69,6 +80,11 @@ func resetInterpreter() {
 }
 
 func interpreterLoop() {
+
+	runningMutex.Lock()
+	isRunning = true
+	runningMutex.Unlock()
+
 	repeatOpcode := func() {
 		pc -= 2
 	}
@@ -80,8 +96,12 @@ func interpreterLoop() {
 
 	for {
 		select {
-		case <-quitChan:
+		case <-stopChan:
+			runningMutex.Lock()
+			isRunning = false
 			timerChan <- true
+			runningMutex.Unlock()
+			return
 		default:
 			start := time.Now()
 			func() {
@@ -105,7 +125,7 @@ func interpreterLoop() {
 				case 0x00:
 					switch opcode {
 					case 0x00E0: // Clear Screen
-						resetDisplay()
+						clearScreen()
 					case 0x00EE: // Return from Subroutine
 						pc = stack.Pop()
 					}

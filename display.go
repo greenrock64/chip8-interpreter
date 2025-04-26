@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -11,6 +12,10 @@ const (
 )
 
 var (
+	window            *sdl.Window
+	isDisplaying      bool
+	isDisplayingMutex sync.Mutex
+
 	display      = make([][]bool, 64)
 	displayMutex sync.Mutex
 
@@ -25,27 +30,55 @@ var (
 	inputMutex sync.Mutex
 )
 
-func resetDisplay() {
+func clearScreen() {
+	displayMutex.Lock()
+	defer displayMutex.Unlock()
 	display = make([][]bool, 64)
 	for i := range display {
 		display[i] = make([]bool, 32)
 	}
 }
 
-func windowLoop() {
-	// Setup SDL Display
-	if err := sdl.Init(sdl.INIT_EVERYTHING); err != nil {
-		panic(err)
+func resetDisplay() {
+	isDisplayingMutex.Lock()
+	defer isDisplayingMutex.Unlock()
+	if isDisplaying {
+		fmt.Println("Closing display on reset")
+		quitChan <- true
 	}
-	defer sdl.Quit()
+	clearScreen()
+	fmt.Println("Display reset")
+}
 
-	window, err := sdl.CreateWindow("SDL Experiments", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
-		int32(windowWidth), int32(windowHeight), sdl.WINDOW_SHOWN)
+func tryCloseDisplay() {
+	isDisplayingMutex.Lock()
+	defer isDisplayingMutex.Unlock()
+	if isDisplaying {
+		quitChan <- true
+	}
+}
+
+func initialiseWindow() {
+	// Setup SDL Display
+	err := sdl.Init(sdl.INIT_EVERYTHING)
 	if err != nil {
 		panic(err)
 	}
-	defer window.Destroy()
+	window, err = sdl.CreateWindow("CHIP-8 Interpreter", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
+		int32(windowWidth), int32(windowHeight), sdl.WINDOW_HIDDEN)
+	if err != nil {
+		panic(err)
+	}
+}
 
+func windowLoop() {
+	fmt.Println("New windowloop")
+	isDisplayingMutex.Lock()
+	isDisplaying = true
+	fmt.Println("Set isDisplaying")
+	isDisplayingMutex.Unlock()
+
+	window.Show()
 	surface, err := window.GetSurface()
 	if err != nil {
 		panic(err)
@@ -53,29 +86,43 @@ func windowLoop() {
 
 	running := true
 	for running {
-		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
-			switch event := event.(type) {
-			case *sdl.KeyboardEvent:
-				func() {
-					if event.GetType() == sdl.KEYDOWN {
-						handleKeyEvent(event.Keysym.Sym, true)
-					} else {
-						// KEYUP
-						handleKeyEvent(event.Keysym.Sym, false)
-					}
-				}()
-			case *sdl.QuitEvent:
-				println("Quit")
-				running = false
+		select {
+		case <-quitChan:
+			isDisplayingMutex.Lock()
+			running = false
+			fmt.Println("Quitchan received")
+		default:
+			for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+				switch event := event.(type) {
+				case *sdl.KeyboardEvent:
+					func() {
+						if event.GetType() == sdl.KEYDOWN {
+							handleKeyEvent(event.Keysym.Sym, true)
+						} else {
+							// KEYUP
+							handleKeyEvent(event.Keysym.Sym, false)
+						}
+					}()
+				case *sdl.QuitEvent:
+					running = false
+				}
 			}
+			if !running {
+				isDisplayingMutex.Lock()
+				break
+			}
+
+			loopTime := sdlLoop(surface)
+			window.UpdateSurface()
+
+			delay := (1000 / DISPLAY_REFRESH_RATE) - loopTime
+			sdl.Delay(delay)
 		}
-
-		loopTime := sdlLoop(surface)
-		window.UpdateSurface()
-
-		delay := (1000 / DISPLAY_REFRESH_RATE) - loopTime
-		sdl.Delay(delay)
 	}
+	window.Hide()
+	defer isDisplayingMutex.Unlock()
+	isDisplaying = false
+	fmt.Println("Displayloop ended")
 }
 
 func sdlLoop(surface *sdl.Surface) uint32 {
