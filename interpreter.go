@@ -13,6 +13,7 @@ import (
 const (
 	INSTRUCTION_REFRESH_RATE = 600
 	TIMER_REFRESH_RATE       = 60
+	MEM_FONT_DATA_START      = 0x0050
 )
 
 var roms = map[string]string{
@@ -23,6 +24,25 @@ var roms = map[string]string{
 	"testsuite5":    "../chip8-roms/tests/5-quirks.ch8",
 	"testsuite6":    "../chip8-roms/tests/6-keypad.ch8",
 	"octojam9title": "../chip8-roms/octojam/octojam9title.ch8",
+}
+
+var fontData = []byte{
+	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+	0x20, 0x60, 0x20, 0x20, 0x70, // 1
+	0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+	0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+	0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+	0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+	0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+	0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+	0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+	0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+	0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+	0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+	0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+	0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+	0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+	0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 }
 
 var (
@@ -73,7 +93,10 @@ func resetInterpreter() {
 	memoryMutex.Lock()
 	defer memoryMutex.Unlock()
 	memory = make([]byte, 4096)
-
+	// Load fonts into memory, starting at MEM_FONT_DATA_START
+	for i, data := range fontData {
+		memory[MEM_FONT_DATA_START+i] = data
+	}
 }
 
 func loadRom(romName string) {
@@ -349,7 +372,8 @@ func interpreterLoop() {
 						indexRegister += uint16(registers[uint8(x)])
 					case 0x29:
 						// FX29 - Set I to the location of the sprite for character VX
-						unsupportedOpcode(opcode)
+						setChar := registers[uint8(x)]
+						indexRegister = uint16(MEM_FONT_DATA_START + setChar*5)
 					case 0x33:
 						// FX33 - Store a BCD representation of VX to memory location I
 						// Representation is i = hundreds, i+1 = tens, i+2 = ones
