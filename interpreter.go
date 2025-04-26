@@ -16,6 +16,15 @@ const (
 	MEM_FONT_DATA_START      = 0x0050
 )
 
+type InterpreterMode int
+
+const (
+	MODE_NONE InterpreterMode = iota
+	MODE_CHIP8
+	MODE_SUPERCHIP
+	MODE_XOCHIP
+)
+
 var roms = map[string]string{
 	"testsuite1":    "../chip8-roms/tests/1-chip8-logo.ch8",
 	"testsuite2":    "../chip8-roms/tests/2-ibm-logo.ch8",
@@ -50,8 +59,9 @@ var (
 	isRunning    bool
 	runningMutex sync.Mutex
 
-	memory      []byte
-	memoryMutex sync.Mutex
+	memory          []byte
+	memoryMutex     sync.Mutex
+	interpreterMode InterpreterMode
 
 	timerMutex sync.RWMutex
 	delayTimer uint8
@@ -67,14 +77,14 @@ var (
 )
 
 func StartRom(romName string) {
-	resetInterpreter()
+	resetInterpreter(selectedInterpreterMode)
 	resetDisplay()
 	loadRom(romName)
 	go interpreterLoop()
 	go windowLoop()
 }
 
-func resetInterpreter() {
+func resetInterpreter(mode InterpreterMode) {
 	// Stop the interpreter, if it's running
 	runningMutex.Lock()
 	if isRunning {
@@ -97,6 +107,8 @@ func resetInterpreter() {
 	for i, data := range fontData {
 		memory[MEM_FONT_DATA_START+i] = data
 	}
+
+	interpreterMode = mode
 }
 
 func loadRom(romName string) {
@@ -207,12 +219,21 @@ func interpreterLoop() {
 					case 0x1:
 						// 8XY1 - Set VX to VX or VY (bitwise)
 						registers[uint8(x)] = registers[uint8(x)] | registers[uint8(y)]
+						if interpreterMode == MODE_CHIP8 {
+							registers[0x0F] = 0
+						}
 					case 0x2:
 						// 8XY2 - Set VX to VX and VY (bitwise)
 						registers[uint8(x)] = registers[uint8(x)] & registers[uint8(y)]
+						if interpreterMode == MODE_CHIP8 {
+							registers[0x0F] = 0
+						}
 					case 0x3:
 						// 8XY3 - Set VX to VX xor VY
 						registers[uint8(x)] = registers[uint8(x)] ^ registers[uint8(y)]
+						if interpreterMode == MODE_CHIP8 {
+							registers[0x0F] = 0
+						}
 					case 0x4:
 						// 8XY4 - Add VY to VX (setting VF to 1 on overflow)
 						newVal := uint16(registers[uint8(x)]) + uint16(registers[uint8(y)])
@@ -232,6 +253,9 @@ func interpreterLoop() {
 						registers[0xF] = flag
 					case 0x6:
 						// 8XY6 - Bitshift VX right 1, setting VF 1 to if LSB was shifted out
+						if interpreterMode == MODE_CHIP8 {
+							registers[uint8(x)] = registers[uint8(y)]
+						}
 						flag := registers[uint8(x)] & 1
 						registers[uint8(x)] = registers[uint8(x)] >> 1
 						registers[0xF] = flag
@@ -245,6 +269,9 @@ func interpreterLoop() {
 						registers[0xF] = flag
 					case 0xE:
 						// 8XYE - Bitshift VX left 1, setting VF to 1 if MSB was shifted out
+						if interpreterMode == MODE_CHIP8 {
+							registers[uint8(x)] = registers[uint8(y)]
+						}
 						flag := registers[uint8(x)] >> 7
 						registers[uint8(x)] = registers[uint8(x)] << 1
 						registers[0xF] = flag
@@ -267,14 +294,18 @@ func interpreterLoop() {
 				case 0xD0:
 					// DXYN - Draw to display
 					memPos := indexRegister
+
 					posX := int(registers[x]) % horizontalPixelCount
 					posY := int(registers[y]) % verticalPixelCount
 
 					didUnset := false
 					func() {
+						if interpreterMode == MODE_CHIP8 {
+							<-verticalBlankChan
+						}
 						displayMutex.Lock()
 						defer displayMutex.Unlock()
-						for y := 0; y < int(n); y++ {
+						for i := 0; i < int(n); i++ {
 							sprite := memory[memPos]
 
 							setPixels := []bool{}
@@ -388,10 +419,16 @@ func interpreterLoop() {
 						for i := 0; i <= int(x); i++ {
 							memory[indexRegister+uint16(i)] = registers[i]
 						}
+						if interpreterMode == MODE_CHIP8 {
+							indexRegister += uint16(x) + 1
+						}
 					case 0x65:
 						// FX65 - Fetches values for V0 to VX from memory, starting at address I
 						for i := 0; i <= int(x); i++ {
 							registers[i] = memory[indexRegister+uint16(i)]
+						}
+						if interpreterMode == MODE_CHIP8 {
+							indexRegister += uint16(x) + 1
 						}
 					}
 				default:
@@ -402,7 +439,7 @@ func interpreterLoop() {
 			}()
 			t := time.Now()
 			elapsed := t.Sub(start)
-			// Cap to 60Hz
+			// Restrict refresh rate
 			delay := (1000 / INSTRUCTION_REFRESH_RATE) - elapsed
 			time.Sleep(time.Millisecond * time.Duration(delay))
 		}

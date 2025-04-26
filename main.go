@@ -7,13 +7,14 @@ import (
 )
 
 var (
-	quitChan = make(chan bool)
+	quitChan                                = make(chan bool)
+	selectedInterpreterMode InterpreterMode = MODE_CHIP8
 )
 
 func main() {
 	fyneApp := app.New()
 	fyneWindow := fyneApp.NewWindow("CHIP-8 Controller")
-	fyneWindow.Resize(fyne.NewSize(800, 600))
+	fyneWindow.Resize(fyne.NewSize(400, 400))
 
 	loadRomMenu := fyne.NewMenuItem("Load ROM", nil)
 	loadRomMenu.ChildMenu = fyne.NewMenu("",
@@ -27,10 +28,28 @@ func main() {
 	)
 	fileMenu := fyne.NewMenu("CHIP-8",
 		loadRomMenu,
-		fyne.NewMenuItem("Close Interpreter", func() { resetInterpreter(); resetDisplay() }),
+		fyne.NewMenuItem("Close Interpreter", func() { resetInterpreter(MODE_NONE); resetDisplay() }),
+	)
+
+	selectModeMenu := fyne.NewMenuItem("Hardware Mode", nil)
+
+	selectMode := func(mode InterpreterMode) {
+		selectModeMenu.ChildMenu.Items[selectedInterpreterMode-1].Checked = false
+		selectedInterpreterMode = mode
+		selectModeMenu.ChildMenu.Items[mode-1].Checked = true
+	}
+	selectModeMenu.ChildMenu = fyne.NewMenu("",
+		fyne.NewMenuItem("CHIP-8", func() { selectMode(MODE_CHIP8) }),
+		fyne.NewMenuItem("SUPER-CHIP", func() { selectMode(MODE_SUPERCHIP) }),
+		fyne.NewMenuItem("XO-CHIP", func() { selectMode(MODE_XOCHIP) }),
+	)
+	selectModeMenu.ChildMenu.Items[0].Checked = true
+	optionsMenu := fyne.NewMenu("Options",
+		selectModeMenu,
 	)
 	mainMenu := fyne.NewMainMenu(
 		fileMenu,
+		optionsMenu,
 	)
 	fyneWindow.SetMainMenu(mainMenu)
 

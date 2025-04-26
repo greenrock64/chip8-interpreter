@@ -16,8 +16,9 @@ var (
 	isDisplaying      bool
 	isDisplayingMutex sync.Mutex
 
-	display      = make([][]bool, 64)
-	displayMutex sync.Mutex
+	display           = make([][]bool, 64)
+	displayMutex      sync.Mutex
+	verticalBlankChan = make(chan bool)
 
 	pixelWidth           = 8
 	pixelHeight          = 8
@@ -115,7 +116,10 @@ func windowLoop() {
 
 			loopTime := sdlLoop(surface)
 			window.UpdateSurface()
-
+			select {
+			case verticalBlankChan <- true:
+			default:
+			}
 			delay := (1000 / DISPLAY_REFRESH_RATE) - loopTime
 			sdl.Delay(delay)
 		}
