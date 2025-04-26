@@ -79,6 +79,7 @@ func windowLoop() {
 	isDisplayingMutex.Unlock()
 
 	window.Show()
+	window.Raise()
 	surface, err := window.GetSurface()
 	if err != nil {
 		panic(err)
