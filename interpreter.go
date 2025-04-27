@@ -74,6 +74,8 @@ var (
 	indexRegister uint16
 	stack         Stack
 	registers     []uint8
+
+	keyAwaitingRelease *int
 )
 
 func StartRom(romName string) {
@@ -374,13 +376,32 @@ func interpreterLoop() {
 						func() {
 							inputMutex.Lock()
 							defer inputMutex.Unlock()
-							keyIsPressed := false
-							for _, key := range input {
-								if key {
-									keyIsPressed = true
+							keypressDetected := false
+							if interpreterMode == MODE_CHIP8 {
+								if keyAwaitingRelease != nil {
+									// Wait for the previously flagged 'pressed' key to be released
+									if !input[*keyAwaitingRelease] {
+										keypressDetected = true
+										registers[x] = uint8(*keyAwaitingRelease)
+										keyAwaitingRelease = nil
+									}
+								} else {
+									for i, key := range input {
+										if key {
+											// Flag the first pressed key
+											keyAwaitingRelease = &i
+										}
+									}
+								}
+							} else {
+								for i, key := range input {
+									if key {
+										keypressDetected = true
+										registers[x] = uint8(i)
+									}
 								}
 							}
-							if !keyIsPressed {
+							if !keypressDetected {
 								repeatOpcode()
 							}
 						}()
