@@ -113,6 +113,13 @@ func resetInterpreter(mode InterpreterMode) {
 	interpreterMode = mode
 }
 
+func tryStopInterpreter() {
+	select {
+	case stopChan <- true:
+	default:
+	}
+}
+
 func loadRom(romName string) {
 	// Open the ROM on the filesystem
 	rom, err := os.Open(roms[romName])
@@ -136,7 +143,6 @@ func loadRom(romName string) {
 }
 
 func interpreterLoop() {
-
 	runningMutex.Lock()
 	isRunning = true
 	runningMutex.Unlock()

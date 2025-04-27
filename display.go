@@ -127,6 +127,7 @@ func windowLoop() {
 	window.Hide()
 	defer isDisplayingMutex.Unlock()
 	isDisplaying = false
+	tryStopInterpreter()
 	fmt.Println("Displayloop ended")
 }
 
