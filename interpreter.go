@@ -359,6 +359,8 @@ func interpreterLoop() {
 					}()
 					if didUnset {
 						registers[0x0F] = 1
+					} else {
+						registers[0x0F] = 0
 					}
 				case 0xE0:
 					switch nn {
