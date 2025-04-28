@@ -15,10 +15,11 @@ var (
 	window            *sdl.Window
 	isDisplaying      bool
 	isDisplayingMutex sync.Mutex
+	closeWindowChan   = make(chan bool)
 
 	display           = make([][]bool, 64)
 	displayMutex      sync.Mutex
-	verticalBlankChan = make(chan bool)
+	verticalBlankChan = make(chan bool, 1)
 
 	pixelWidth           = 8
 	pixelHeight          = 8
@@ -31,7 +32,7 @@ var (
 	inputMutex sync.Mutex
 )
 
-func clearScreen() {
+func clearDisplay() {
 	displayMutex.Lock()
 	defer displayMutex.Unlock()
 	display = make([][]bool, 64)
@@ -40,22 +41,25 @@ func clearScreen() {
 	}
 }
 
-func resetDisplay() {
+func tryOpenDisplay() {
 	isDisplayingMutex.Lock()
-	defer isDisplayingMutex.Unlock()
-	if isDisplaying {
-		fmt.Println("Closing display on reset")
-		quitChan <- true
+	isDisplaying := isDisplaying
+	isDisplayingMutex.Unlock()
+	if !isDisplaying {
+		go windowLoop()
 	}
-	clearScreen()
-	fmt.Println("Display reset")
 }
 
 func tryCloseDisplay() {
 	isDisplayingMutex.Lock()
-	defer isDisplayingMutex.Unlock()
+	isDisplaying := isDisplaying
+	isDisplayingMutex.Unlock()
 	if isDisplaying {
-		quitChan <- true
+		fmt.Println("Closing display")
+		closeWindowChan <- true
+		fmt.Println("Waiting for closeDisplay response")
+		// Await confirmation that the display has closed
+		<-closeWindowChan
 	}
 }
 
@@ -76,7 +80,6 @@ func windowLoop() {
 	fmt.Println("New windowloop")
 	isDisplayingMutex.Lock()
 	isDisplaying = true
-	fmt.Println("Set isDisplaying")
 	isDisplayingMutex.Unlock()
 
 	window.Show()
@@ -89,10 +92,9 @@ func windowLoop() {
 	running := true
 	for running {
 		select {
-		case <-quitChan:
-			isDisplayingMutex.Lock()
+		case <-closeWindowChan:
 			running = false
-			fmt.Println("Quitchan received")
+			fmt.Printf("Received Close Window signal")
 		default:
 			for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 				switch event := event.(type) {
@@ -110,7 +112,6 @@ func windowLoop() {
 				}
 			}
 			if !running {
-				isDisplayingMutex.Lock()
 				break
 			}
 
@@ -124,10 +125,18 @@ func windowLoop() {
 			sdl.Delay(delay)
 		}
 	}
+	// Display has ended, so clean up
 	window.Hide()
+	isDisplayingMutex.Lock()
 	defer isDisplayingMutex.Unlock()
 	isDisplaying = false
+
 	tryStopInterpreter()
+	// Inform any waiting functions that we're wrapped up
+	select {
+	case closeWindowChan <- true:
+	default:
+	}
 	fmt.Println("Displayloop ended")
 }
 

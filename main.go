@@ -7,9 +7,22 @@ import (
 )
 
 var (
-	quitChan                                = make(chan bool)
 	selectedInterpreterMode InterpreterMode = MODE_CHIP8
 )
+
+func StartRom(romName string) {
+	clearDisplay()
+	tryOpenDisplay()
+
+	resetInterpreter(selectedInterpreterMode)
+	loadRom(romName)
+	tryStartInterpreter()
+}
+
+func CloseInterpreter() {
+	resetInterpreter(MODE_NONE)
+	tryCloseDisplay()
+}
 
 func main() {
 	fyneApp := app.New()
@@ -18,17 +31,17 @@ func main() {
 
 	loadRomMenu := fyne.NewMenuItem("Load ROM", nil)
 	loadRomMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Test Suite 1", func() { StartRom("testsuite1") }),
-		fyne.NewMenuItem("Test Suite 2", func() { StartRom("testsuite2") }),
-		fyne.NewMenuItem("Test Suite 3", func() { StartRom("testsuite3") }),
-		fyne.NewMenuItem("Test Suite 4", func() { StartRom("testsuite4") }),
-		fyne.NewMenuItem("Test Suite 5", func() { StartRom("testsuite5") }),
-		fyne.NewMenuItem("Test Suite 6", func() { StartRom("testsuite6") }),
-		fyne.NewMenuItem("Octojam - Title 9", func() { StartRom("octojam9title") }),
+		fyne.NewMenuItem("Test Suite 1", func() { go StartRom("testsuite1") }),
+		fyne.NewMenuItem("Test Suite 2", func() { go StartRom("testsuite2") }),
+		fyne.NewMenuItem("Test Suite 3", func() { go StartRom("testsuite3") }),
+		fyne.NewMenuItem("Test Suite 4", func() { go StartRom("testsuite4") }),
+		fyne.NewMenuItem("Test Suite 5", func() { go StartRom("testsuite5") }),
+		fyne.NewMenuItem("Test Suite 6", func() { go StartRom("testsuite6") }),
+		fyne.NewMenuItem("Octojam - Title 9", func() { go StartRom("octojam9title") }),
 	)
 	fileMenu := fyne.NewMenu("CHIP-8",
 		loadRomMenu,
-		fyne.NewMenuItem("Close Interpreter", func() { resetInterpreter(MODE_NONE); resetDisplay() }),
+		fyne.NewMenuItem("Close Interpreter", func() { go CloseInterpreter() }),
 	)
 
 	selectModeMenu := fyne.NewMenuItem("Hardware Mode", nil)
@@ -59,5 +72,5 @@ func main() {
 	defer window.Destroy()
 
 	fyneWindow.ShowAndRun()
-	tryCloseDisplay()
+	go CloseInterpreter()
 }

@@ -55,9 +55,9 @@ var fontData = []byte{
 }
 
 var (
-	stopChan     = make(chan bool)
-	isRunning    bool
-	runningMutex sync.Mutex
+	isRunning           bool
+	runningMutex        sync.Mutex
+	stopInterpreterChan = make(chan bool)
 
 	memory          []byte
 	memoryMutex     sync.Mutex
@@ -78,21 +78,9 @@ var (
 	keyAwaitingRelease *int
 )
 
-func StartRom(romName string) {
-	resetInterpreter(selectedInterpreterMode)
-	resetDisplay()
-	loadRom(romName)
-	go interpreterLoop()
-	go windowLoop()
-}
-
 func resetInterpreter(mode InterpreterMode) {
 	// Stop the interpreter, if it's running
-	runningMutex.Lock()
-	if isRunning {
-		stopChan <- true
-	}
-	runningMutex.Unlock()
+	tryStopInterpreter()
 
 	// Instantiate memory, registers, timers, and counters
 	pc = uint16(512) // Program Counter
@@ -113,10 +101,26 @@ func resetInterpreter(mode InterpreterMode) {
 	interpreterMode = mode
 }
 
+func tryStartInterpreter() {
+	runningMutex.Lock()
+	isRunning := isRunning
+	runningMutex.Unlock()
+	if !isRunning {
+		go interpreterLoop()
+	}
+}
+
+// tryStopInterpreter sends a stop signal if an interpreter loop is running
 func tryStopInterpreter() {
-	select {
-	case stopChan <- true:
-	default:
+	runningMutex.Lock()
+	isRunning := isRunning
+	runningMutex.Unlock()
+	if isRunning {
+		fmt.Printf("Stopping interpreter")
+		stopInterpreterChan <- true
+		// Await confirmation that the interpreter has stopped
+		<-stopInterpreterChan
+		return
 	}
 }
 
@@ -158,11 +162,16 @@ func interpreterLoop() {
 
 	for {
 		select {
-		case <-stopChan:
+		case <-stopInterpreterChan:
 			runningMutex.Lock()
+			defer runningMutex.Unlock()
 			isRunning = false
 			timerChan <- true
-			runningMutex.Unlock()
+			// Ping back on the channel to confirm that we're closed
+			select {
+			case stopInterpreterChan <- true:
+			default:
+			}
 			return
 		default:
 			start := time.Now()
@@ -187,7 +196,7 @@ func interpreterLoop() {
 				case 0x00:
 					switch opcode {
 					case 0x00E0: // Clear Screen
-						clearScreen()
+						clearDisplay()
 					case 0x00EE: // Return from Subroutine
 						pc = stack.Pop()
 					}
