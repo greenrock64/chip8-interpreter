@@ -1,4 +1,4 @@
-module chip8interpreter
+module github.com/greenrock64/chip8-interpreter
 
 go 1.24.2
 

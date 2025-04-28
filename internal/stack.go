@@ -1,4 +1,4 @@
-package main
+package internal
 
 type Stack struct {
 	stack []uint16
