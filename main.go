@@ -57,6 +57,8 @@ func main() {
 		fyne.NewMenuItem("XO-CHIP", func() { selectMode(MODE_XOCHIP) }),
 	)
 	selectModeMenu.ChildMenu.Items[0].Checked = true
+	selectModeMenu.ChildMenu.Items[1].Disabled = true
+	selectModeMenu.ChildMenu.Items[2].Disabled = true
 	optionsMenu := fyne.NewMenu("Options",
 		selectModeMenu,
 	)

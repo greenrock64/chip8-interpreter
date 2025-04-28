@@ -47,6 +47,9 @@ func tryOpenDisplay() {
 	isDisplayingMutex.Unlock()
 	if !isDisplaying {
 		go windowLoop()
+	} else {
+		// Display is already open, so highlight it
+		window.Raise()
 	}
 }
 
