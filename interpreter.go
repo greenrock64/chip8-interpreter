@@ -130,16 +130,20 @@ func loadRom(romName string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	loadRomData(rom)
+}
+
+func loadRomData(romFile RomFileReader) {
 	func() {
 		// Load the ROM into CHIP-8 memory
 		memoryMutex.Lock()
 		defer memoryMutex.Unlock()
 
-		_, err = rom.Read(memory[512:])
+		_, err := romFile.Read(memory[512:])
 		if err != io.EOF && err != nil {
 			log.Fatal(err)
 		}
-		err = rom.Close()
+		err = romFile.Close()
 		if err != nil {
 			log.Fatal(err)
 		}

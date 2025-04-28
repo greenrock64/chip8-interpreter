@@ -1,8 +1,13 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -10,12 +15,25 @@ var (
 	selectedInterpreterMode InterpreterMode = MODE_CHIP8
 )
 
-func StartRom(romName string) {
+type RomFileReader interface {
+	Read([]byte) (int, error)
+	Close() error
+}
+
+func StartRom(romName string, romFile RomFileReader) {
+	// Reset the display
 	clearDisplay()
 	tryOpenDisplay()
 
+	// Reset the Interpreter and load the ROM
 	resetInterpreter(selectedInterpreterMode)
-	loadRom(romName)
+	if romName != "" {
+		loadRom(romName)
+	} else if romFile != nil {
+		loadRomData(romFile)
+	} else {
+		fmt.Println("no rom data provided during Start call")
+	}
 	tryStartInterpreter()
 }
 
@@ -27,19 +45,39 @@ func CloseInterpreter() {
 func main() {
 	fyneApp := app.New()
 	fyneWindow := fyneApp.NewWindow("CHIP-8 Controller")
-	fyneWindow.Resize(fyne.NewSize(400, 400))
+	fyneWindow.Resize(fyne.NewSize(600, 500))
 
 	loadRomMenu := fyne.NewMenuItem("Load ROM", nil)
 	loadRomMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Test Suite 1", func() { go StartRom("testsuite1") }),
-		fyne.NewMenuItem("Test Suite 2", func() { go StartRom("testsuite2") }),
-		fyne.NewMenuItem("Test Suite 3", func() { go StartRom("testsuite3") }),
-		fyne.NewMenuItem("Test Suite 4", func() { go StartRom("testsuite4") }),
-		fyne.NewMenuItem("Test Suite 5", func() { go StartRom("testsuite5") }),
-		fyne.NewMenuItem("Test Suite 6", func() { go StartRom("testsuite6") }),
-		fyne.NewMenuItem("Octojam - Title 9", func() { go StartRom("octojam9title") }),
+		fyne.NewMenuItem("Test Suite 1", func() { go StartRom("testsuite1", nil) }),
+		fyne.NewMenuItem("Test Suite 2", func() { go StartRom("testsuite2", nil) }),
+		fyne.NewMenuItem("Test Suite 3", func() { go StartRom("testsuite3", nil) }),
+		fyne.NewMenuItem("Test Suite 4", func() { go StartRom("testsuite4", nil) }),
+		fyne.NewMenuItem("Test Suite 5", func() { go StartRom("testsuite5", nil) }),
+		fyne.NewMenuItem("Test Suite 6", func() { go StartRom("testsuite6", nil) }),
+		fyne.NewMenuItem("Octojam - Title 9", func() { go StartRom("octojam9title", nil) }),
 	)
 	fileMenu := fyne.NewMenu("CHIP-8",
+		fyne.NewMenuItem("Open File", func() {
+			fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+				if reader != nil {
+					go StartRom("", reader)
+				}
+			}, fyneWindow)
+			// Only allow reading of CHIP-8 rom files
+			fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".ch8"}))
+
+			curDir, err := os.Getwd()
+			if err != nil {
+				panic(err)
+			}
+			listableURI, err := storage.ListerForURI(storage.NewFileURI(curDir))
+			if err != nil {
+				panic(err)
+			}
+			fileDialog.SetLocation(listableURI)
+			fileDialog.Show()
+		}),
 		loadRomMenu,
 		fyne.NewMenuItem("Close Interpreter", func() { go CloseInterpreter() }),
 	)
@@ -67,12 +105,13 @@ func main() {
 		optionsMenu,
 	)
 	fyneWindow.SetMainMenu(mainMenu)
+	fyneWindow.Show()
 
 	// Setup SDL Display
 	initialiseWindow()
 	defer sdl.Quit()
 	defer window.Destroy()
 
-	fyneWindow.ShowAndRun()
+	fyneApp.Run()
 	go CloseInterpreter()
 }
